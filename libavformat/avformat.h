@@ -1713,6 +1713,11 @@ typedef struct AVFormatContext {
      */
     int seek2any;
 
+    //EQTY: Add variables for c2pa cert key and manifest
+    char *c2pa_key;
+    char *c2pa_cert;
+    char *c2pa_manifest;
+
     /**
      * Flush the I/O context after each packet.
      * - encoding: Set by user

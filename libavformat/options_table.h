@@ -34,6 +34,11 @@
 #define D AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption avformat_options[] = {
+//EQTY: Command line paramaters
+{"c2pa_key", "c2pa private key", OFFSET(c2pa_key), AV_OPT_TYPE_STRING,  { .str = NULL },  0, 0, D},
+{"c2pa_cert", "c2pa certs", OFFSET(c2pa_cert), AV_OPT_TYPE_STRING,  { .str = NULL },  0, 0, D},
+{"c2pa_manifest", "c2pa manifest", OFFSET(c2pa_manifest), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, D},
+
 {"avioflags", NULL, OFFSET(avio_flags), AV_OPT_TYPE_FLAGS, {.i64 = DEFAULT }, INT_MIN, INT_MAX, D|E, .unit = "avioflags"},
 {"direct", "reduce buffering", 0, AV_OPT_TYPE_CONST, {.i64 = AVIO_FLAG_DIRECT }, INT_MIN, INT_MAX, D|E, .unit = "avioflags"},
 {"probesize", "set probing size", OFFSET(probesize), AV_OPT_TYPE_INT64, {.i64 = 5000000 }, 32, INT64_MAX, D},

@@ -19,6 +19,16 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+ //EQTY: Dynamic function load
+#include <dlfcn.h>
+// Define the function pointer type
+typedef void (*c2pa_sign_func)(
+    const char *manifest_file,
+    const char *input_file,
+    const char *output_file,
+    const char *cert_file,
+    const char *key_file
+);
 
 #include "config.h"
 #include "config_components.h"
@@ -1373,7 +1383,7 @@ static int dict_copy_entry(AVDictionary **dst, const AVDictionary *src, const ch
 }
 
 static int dash_init(AVFormatContext *s)
-{
+{ 
     DASHContext *c = s->priv_data;
     int ret = 0, i;
     char *ptr;
@@ -1905,6 +1915,53 @@ static inline void dashenc_delete_media_segments(AVFormatContext *s, OutputStrea
     memmove(os->segments, os->segments + remove_count, os->nb_segments * sizeof(*os->segments));
 }
 
+static int sign_c2pa_dash(AVFormatContext *s) {
+    if (s->c2pa_key!=NULL &&
+        s->c2pa_cert!=NULL &&
+        s->c2pa_manifest!=NULL) {
+
+        char *url = s->url;
+        if (!url) return -1;
+        int len = strlen(url);
+
+        if (len >= 4 && strcmp(url + len - 4, ".mpd") == 0) {
+
+            //EQTY: Load module and sign dash
+            void *handle = dlopen("libffmpeg_eqty_c2pa.so", RTLD_LAZY);
+            if (!handle) {
+                av_log(s, AV_LOG_INFO, "Error loading Rust library: %s\n", dlerror());
+                return -1;
+            }
+            c2pa_sign_func c2pa_sign = (c2pa_sign_func) dlsym(handle, "c2pa_sign");
+
+            if (!c2pa_sign) {
+                av_log(s, AV_LOG_INFO, "Error finding function: %s\n", dlerror());
+                dlclose(handle);
+                return -1;
+            }
+            av_log(s, AV_LOG_INFO, "Signing Dash\n");
+            av_log(s, AV_LOG_INFO, "Filename: %s\n",s->url);
+            av_log(s, AV_LOG_INFO, "C2PA key: %s\n",s->c2pa_key);
+            av_log(s, AV_LOG_INFO, "C2PA cert: %s\n",s->c2pa_cert);
+            av_log(s, AV_LOG_INFO, "C2PA manifest: %s\n",s->c2pa_manifest);
+
+            // Pass paramaters to the rust library
+            c2pa_sign(
+                s->c2pa_manifest,
+                s->url,
+                s->url,
+                s->c2pa_cert,
+                s->c2pa_key);
+
+                return 1;
+        } else {
+            return 0;
+        }
+        return 0;
+    }
+    return 0;
+
+};
 static int dash_flush(AVFormatContext *s, int final, int stream)
 {
     DASHContext *c = s->priv_data;
@@ -2002,6 +2059,8 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
 
     if (final) {
         for (i = 0; i < s->nb_streams; i++) {
+
+
             OutputStream *os = &c->streams[i];
             if (os->ctx && os->ctx_inited) {
                 int64_t file_size = avio_tell(os->ctx->pb);
@@ -2021,8 +2080,11 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
                 }
 
             }
+            avio_flush(os->ctx->pb);
         }
+
     }
+
     if (ret >= 0) {
         if (c->has_video && !final) {
             c->nr_of_streams_flushed++;
@@ -2033,8 +2095,12 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         }
         // In streaming mode the manifest is written at the beginning
         // of the segment instead
-        if (!c->streaming || final)
+        if (!c->streaming || final) {
             ret = write_manifest(s, final);
+            if (final) {
+                sign_c2pa_dash(s);
+            }
+        }
     }
     return ret;
 }

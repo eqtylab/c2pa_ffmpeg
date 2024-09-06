@@ -20,6 +20,16 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+//EQTY: Dynamic load 
+#include <dlfcn.h>
+// Define the function pointer type
+typedef void (*c2pa_sign_func)(
+    const char *manifest_file,
+    const char *input_file,
+    const char *output_file,
+    const char *cert_file,
+    const char *key_file
+);
 
 #include "config_components.h"
 
@@ -8311,6 +8321,47 @@ static int shift_data(AVFormatContext *s)
     return ff_format_shift_data(s, mov->reserved_header_pos, moov_size);
 }
 
+static int sign_c2pa_mp4(AVFormatContext *s) {
+    if (s->c2pa_key!=NULL &&
+    s->c2pa_cert!=NULL &&
+    s->c2pa_manifest!=NULL) {
+
+        char *url = s->url;
+        if (!url) return -1;
+       
+        //Lazy load library
+        void *handle = dlopen("libffmpeg_eqty_c2pa.so", RTLD_LAZY);
+        if (!handle) {
+            fprintf(stderr, "Error loading Rust library: %s\n", dlerror());
+            return -1;
+        }
+        c2pa_sign_func c2pa_sign = (c2pa_sign_func) dlsym(handle, "c2pa_sign");
+
+        if (!c2pa_sign) {
+            fprintf(stderr, "Error finding function: %s\n", dlerror());
+            dlclose(handle);
+            return -1;
+        }
+
+
+
+        av_log(s, AV_LOG_INFO, "Signing MP4\n");
+        av_log(s, AV_LOG_INFO, "Filename: %s\n",s->url);
+        av_log(s, AV_LOG_INFO, "C2PA key: %s\n",s->c2pa_key);
+        av_log(s, AV_LOG_INFO, "C2PA cert: %s\n",s->c2pa_cert);
+        av_log(s, AV_LOG_INFO, "C2PA manifest: %s\n",s->c2pa_manifest);
+
+        // Pass paramaters to the rust library
+        c2pa_sign(
+            s->c2pa_manifest,
+            s->url,
+            s->url,
+            s->c2pa_cert,
+            s->c2pa_key);
+
+    }
+    return 1;
+};
 static int mov_write_trailer(AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
@@ -8452,6 +8503,10 @@ static int mov_write_trailer(AVFormatContext *s)
         }
     }
 
+    //EQTY
+    //Make sure file is written
+    avio_flush(s->pb);
+    sign_c2pa_mp4(s);
     return res;
 }
 
